@@ -178,12 +178,18 @@ def calculate_answer(parsed):
     filtered = filter_orders(parsed)
     metric = parsed["metric"]
 
+    paid = filtered[filtered["status"] == "paid"]
+    refunded = filtered[filtered["status"] == "refunded"]
+
     if metric == "revenue":
-        paid = filtered[filtered["status"] == "paid"]
-        return round(float(paid["usd_amount"].sum()), 2)
+        gross_revenue = float(paid["usd_amount"].sum())
+        refund_amount = float(refunded["usd_amount"].sum())
+
+        net_revenue = gross_revenue - refund_amount
+
+        return round(net_revenue, 2)
 
     if metric == "refunds":
-        refunded = filtered[filtered["status"] == "refunded"]
         return round(float(refunded["usd_amount"].sum()), 2)
 
     if metric == "orders":
@@ -196,21 +202,27 @@ def calculate_answer(parsed):
         return int(filtered["customer"].nunique())
 
     if metric == "top_product":
-        paid = filtered[filtered["status"] == "paid"]
+        net_by_product = {}
 
-        if paid.empty:
+        for product in filtered["product"].unique():
+            product_rows = filtered[filtered["product"] == product]
+
+            paid_total = float(
+                product_rows[product_rows["status"] == "paid"]["usd_amount"].sum()
+            )
+
+            refunded_total = float(
+                product_rows[product_rows["status"] == "refunded"]["usd_amount"].sum()
+            )
+
+            net_by_product[product] = paid_total - refunded_total
+
+        if not net_by_product:
             return ""
 
-        revenue_by_product = (
-            paid.groupby("product")["usd_amount"]
-            .sum()
-            .sort_values(ascending=False)
-        )
-
-        return revenue_by_product.index[0]
+        return max(net_by_product, key=net_by_product.get)
 
     return 0
-
 
 @app.post("/")
 async def answer_question(request: Request):
